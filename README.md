@@ -46,7 +46,7 @@ MEASURE
 
 ## Code example
 ```py
-s = Qstate(2)
+s = QState(2)
 s.H(0)
 s.CNOT(0, 1)
 s.measure_shots(1000)

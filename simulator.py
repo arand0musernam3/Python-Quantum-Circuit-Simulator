@@ -1,10 +1,11 @@
+from hashlib import new
 import numpy as np
 import sys
 from collections import Counter
 
 isq2 = 1.0 / (2.0 ** 0.5)
 
-class Qstate:
+class QState:
     def __init__(self, n):
         self.n = n
         self.state = np.zeros(2**n, dtype=complex)
@@ -12,6 +13,7 @@ class Qstate:
 
     def op(self, t, i):
         """Apply a gate matrix t starting at qubit i (MSB-first)."""
+        # Not used anymore, but kept in case matrix-based gates are needed
         eyeL = np.eye(2**i, dtype=complex)
         k = int(t.shape[0]**0.5)
         eyeR = np.eye(2**(self.n - i - k), dtype=complex)
@@ -25,51 +27,144 @@ class Qstate:
     # --- Single-qubit gates ---
     def H(self, i):
         """Hadamard gate on qubit i."""
-        h = isq2 * np.array([[1, 1], [1, -1]], dtype=complex)
-        self.op(h, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            j = idx ^ (1 << p_i)
+            if (idx >> p_i) & 1: # Qubit is 1
+                new[j] += amp * isq2
+                new[idx] += amp * -isq2 # Minus sign for the |1> state
+            else: # Qubit is 0
+                new[idx] += amp * isq2
+                new[j] += amp * isq2
+        self.state = new
 
     def X(self, i):
         """Pauli-X (NOT) gate on qubit i."""
-        x = np.array([[0, 1], [1, 0]], dtype=complex)
-        self.op(x, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            # flip qubit i using XOR mask
+            j = idx ^ (1 << p_i)
+            new[j] += amp
+        self.state = new
 
     def Y(self, i):
         """Pauli-Y gate on qubit i."""
-        y = np.array([[0, -1j], [1j, 0]], dtype=complex)
-        self.op(y, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            j = idx ^ (1 << p_i)
+            if (idx >> p_i) & 1: # Qubit is 1, so the new amplitude goes to the '0' state
+                new[j] += amp * 1j
+            else: # Qubit is 0, so the new amplitude goes to the '1' state
+                new[j] += amp * -1j
+        self.state = new
 
     def Z(self, i):
         """Pauli-Z gate on qubit i."""
-        z = np.array([[1, 0], [0, -1]], dtype=complex)
-        self.op(z, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            if (idx >> p_i) & 1:
+                new[idx] += -amp
+            else:
+                new[idx] += amp
+        self.state = new
 
     def S(self, i):
         """S (phase) gate on qubit i."""
-        s = np.array([[1, 0], [0, 1j]], dtype=complex)
-        self.op(s, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            if (idx >> p_i) & 1:
+                # qubit i is 1, apply phase i
+                new[idx] += 1j * amp
+            else:
+                new[idx] += amp
+        self.state = new
 
     def T(self, i):
         """T (π/8) gate on qubit i."""
-        t = np.array([[1, 0], [0, np.exp(1j*np.pi/4)]], dtype=complex)
-        self.op(t, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        phase = np.exp(1j * np.pi / 4)
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            if (idx >> p_i) & 1:
+                # qubit i is 1, apply phase exp(iπ/4)
+                new[idx] += phase * amp
+            else:
+                new[idx] += amp
+        self.state = new
 
     def sqrtX(self, i):
         """Square root of X gate on qubit i."""
-        sx = 0.5 * np.array([[1+1j, 1-1j], [1-1j, 1+1j]], dtype=complex)
-        self.op(sx, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        
+        c00 = 0.5 * (1 + 1j) # Top-left element
+        c01 = 0.5 * (1 - 1j) # Top-right element
+        c10 = 0.5 * (1 - 1j) # Bottom-left element
+        c11 = 0.5 * (1 + 1j) # Bottom-right element
+
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            j = idx ^ (1 << p_i) # The flipped index
+            
+            # Distribute amplitude based on the original qubit's value
+            if (idx >> p_i) & 1: # Qubit is 1
+                # Adds to the '0' state with a factor (c10)
+                new[j] += amp * c10
+                # Adds to the '1' state with a factor (c11)
+                new[idx] += amp * c11
+            else: # Qubit is 0
+                # Adds to the '0' state with a factor (c00)
+                new[idx] += amp * c00
+                # Adds to the '1' state with a factor (c01)
+                new[j] += amp * c01
+                
+        self.state = new
 
     def Rtheta(self, i, theta):
         """Rotation around Y axis by θ on qubit i."""
-        r = np.array([
-            [np.cos(theta/2), -np.sin(theta/2)],
-            [np.sin(theta/2),  np.cos(theta/2)]
-        ], dtype=complex)
-        self.op(r, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+
+        c = np.cos(theta/2)
+        s = np.sin(theta/2)
+
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            j = idx ^ (1 << p_i)
+            
+            if (idx >> p_i) & 1: # Qubit is 1
+                new[j] += amp * s
+                new[idx] += amp * c
+            else: # Qubit is 0
+                new[idx] += amp * c
+                new[j] += amp * -s
+                
+        self.state = new
 
     def Rphi(self, i, phi):
         """Phase-shift by φ on qubit i."""
-        r = np.array([[1, 0], [0, np.exp(1j*phi)]], dtype=complex)
-        self.op(r, i)
+        new = np.zeros_like(self.state)
+        p_i = self._bitpos(i)
+        phase = np.exp(1j * phi)
+
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            if (idx >> p_i) & 1:
+                new[idx] += phase * amp
+            else:
+                new[idx] += amp
+        self.state = new
 
     # --- Two-qubit gates ---
     def CNOT(self, control, target):
@@ -166,6 +261,7 @@ class Qstate:
     def measure_shots(self, shots=100000):
         """Repeat measurement many times, return statistics."""
         probs = np.abs(self.state)**2
+        print(sum(probs))
         outcomes = np.random.choice(2**self.n, size=shots, p=probs)
         counts = Counter(outcomes)
         print(f"Results after {shots} shots:")
@@ -187,7 +283,7 @@ def run_circuit_file(filename):
             lines.append(stripped)
 
     n_qubits = int(lines[0])
-    q = Qstate(n_qubits)
+    q = QState(n_qubits)
 
     print(f"\n--- Running circuit from {filename} with {n_qubits} qubits ---")
 
@@ -260,15 +356,15 @@ if __name__ == "__main__":
         filename = sys.argv[1]
         run_circuit_file(filename)
     else:
-        # --- Default tests if no argument is given ---
+        # --- Default tests if no argument is given ---´
 
         # Constructing an EPR pair and measuring
-        s = Qstate(2)
+        s = QState(2)
         s.H(0)
         s.CNOT(0, 1)
         print("EPR pair state vector:")
         print(s.state)
-        s.measure_shots(1000)
+        s.measure_shots(100000)
         print("State after measurement:")
         print(s.state)
         print("Single measurement outcome:", s.measure())
@@ -276,7 +372,7 @@ if __name__ == "__main__":
         print(s.state)
 
         # Toffoli example
-        q = Qstate(3)
+        q = QState(3)
         q.H(0)
         q.H(1)
         q.X(2)  # set target to |1>
@@ -285,7 +381,7 @@ if __name__ == "__main__":
         q.measure_shots(200000)
 
         # Website example
-        s = Qstate(3)
+        s = QState(3)
         s.H(1)
         s.H(2)
         s.Rphi(2, 0.3)
