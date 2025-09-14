@@ -258,10 +258,9 @@ class QState:
         self.state = new
         return f"|{format(outcome, f'0{self.n}b')}⟩"
 
-    def measure_shots(self, shots=100000):
+    def measure_shots(self, shots=10000000):
         """Repeat measurement many times, return statistics."""
         probs = np.abs(self.state)**2
-        print(sum(probs))
         outcomes = np.random.choice(2**self.n, size=shots, p=probs)
         counts = Counter(outcomes)
         print(f"Results after {shots} shots:")
@@ -269,8 +268,24 @@ class QState:
             perc = count/shots*100
             print(f"  |{format(outcome, f'0{self.n}b')}⟩ : {count} ({perc:.2f}%)")
         return counts
-
     
+    # --- Printing ---
+    def print_state(self, decimals=4):
+        """Prints the state vector in a more readable format."""
+        for idx, amp in enumerate(self.state):
+            # Use a tolerance for floating-point comparison
+            if not np.isclose(amp, 0, atol=1e-12):
+                bitstring = format(idx, f'0{self.n}b')
+                
+                # Format the real and imaginary parts
+                real_part = f"{amp.real:.{decimals}f}"
+                imag_part = f"{abs(amp.imag):.{decimals}f}"
+                
+                # Determine the sign for the imaginary part
+                sign = '+' if amp.imag >= 0 else '-'
+                
+                # Print the state
+                print(f"  |{bitstring}⟩: {real_part} {sign} {imag_part}j")
 
 # ------------------ Circuit Parser ------------------
 def run_circuit_file(filename):
@@ -346,7 +361,7 @@ def run_circuit_file(filename):
 
     if not saw_measure:
         print("Final state (no measurement command found):")
-        print(q.state)
+        q.print_state()
     return q
 
 # ------------------ Main / Testing ------------------
@@ -360,16 +375,17 @@ if __name__ == "__main__":
 
         # Constructing an EPR pair and measuring
         s = QState(2)
+        print("\n--- EPR pair state vector ---")
+        print("Initial state:")
+        s.print_state()
         s.H(0)
         s.CNOT(0, 1)
-        print("EPR pair state vector:")
-        print(s.state)
-        s.measure_shots(100000)
-        print("State after measurement:")
-        print(s.state)
+        print("State before measurement:")
+        s.print_state()
+        s.measure_shots()
         print("Single measurement outcome:", s.measure())
-        print("State after single measurement:")
-        print(s.state)
+        print("State after measurement:")
+        s.print_state()
 
         # Toffoli example
         q = QState(3)
@@ -377,8 +393,8 @@ if __name__ == "__main__":
         q.H(1)
         q.X(2)  # set target to |1>
         q.CCNOT(0, 1, 2)
-        print("Toffoli gate example:")
-        q.measure_shots(200000)
+        print("\n--- Toffoli gate example ---")
+        q.measure_shots()
 
         # Website example
         s = QState(3)
@@ -389,11 +405,11 @@ if __name__ == "__main__":
         s.H(1)
         s.H(2)
         s.CNOT(2, 0)
-        print("Website example:")
-        s.measure_shots(100000)
+        print("\n--- Website example ---")
+        s.measure_shots()
 
         # Example circuit files
-        print("Running example circuit files:")
+        print("\n### Running example circuit files ###")
         run_circuit_file("rand.circuit")
         run_circuit_file("measure.circuit")
         run_circuit_file("input.circuit")
