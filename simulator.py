@@ -1,4 +1,3 @@
-from hashlib import new
 import numpy as np
 import sys
 from collections import Counter
@@ -15,7 +14,7 @@ class QState:
         """Apply a gate matrix t starting at qubit i (MSB-first)."""
         # Not used anymore, but kept in case matrix-based gates are needed
         eyeL = np.eye(2**i, dtype=complex)
-        k = int(t.shape[0]**0.5)
+        k = int(np.log2(t.shape[0]))
         eyeR = np.eye(2**(self.n - i - k), dtype=complex)
         t_all = np.kron(np.kron(eyeL, t), eyeR)
         self.state = np.matmul(t_all, self.state)
@@ -278,7 +277,7 @@ class QState:
         self.state = new
         return f"|{format(outcome, f'0{self.n}b')}⟩"
 
-    def measure_shots(self, shots=10000000):
+    def measure_shots(self, shots=1000000):
         """Repeat measurement many times, return statistics."""
         probs = np.abs(self.state)**2
         outcomes = np.random.choice(2**self.n, size=shots, p=probs)
@@ -389,105 +388,38 @@ def run_circuit_file(filename):
     return q
 
 # ------------------ Main / Testing ------------------
+def problem2_week5():
+    print("\n--- Problem 2 from Week 5 ---")
+    n_qubits = 3
+    input_qubits = n_qubits - 1
+    ancilla_qubit = n_qubits - 1
 
-def run_tests():
-    print("### Running gate tests ###")
+    s = QState(n_qubits)
 
-    # Test SWAP, Rphi and CRphi gates
-    s = QState(2)
-    s.state = np.array([0, 1, 0, 0], dtype=complex)
-    s.print_state()
-    s.SWAP(0, 1)
-    s.print_state()
-
-    s = QState(1)
-    s.state = np.array([1, 0], dtype=complex)
-    s.print_state()
-    s.Rphi(0, np.pi)
-    s.print_state()
-    s.state = np.array([0, 1], dtype=complex)
-    s.print_state()
-    s.Rphi(0, np.pi)
     s.print_state()
 
-    s = QState(2)
-    s.state = np.array([0, 0, 0, 1], dtype=complex)
-    s.print_state()
-    s.CRphi(0, 1, np.pi/2)
+    # Preparing ancilla
+    s.X(ancilla_qubit)
+    s.H(ancilla_qubit)
+
     s.print_state()
 
-    s.state = np.array([0, 0, 1, 0], dtype=complex)
-    s.print_state()
-    s.CRphi(0, 1, np.pi/2)
+    # Put all qubits into superposition
+    for i in range(input_qubits):
+        s.H(i)
+
     s.print_state()
 
-    sys.exit(0)
-    print("### Running default tests ###")
-
-    # exercise 6
-    s = QState(3)
-    s.state = np.array([1, 0, 0, 0, 0, 0, 0, 1], dtype=complex) / np.sqrt(2)
-    # (0,0,0)
-    if True:
-        s.H(0)
-        s.H(1)
-        s.H(2)
-    # (0,1,1)
-    if False:
-        s.S(0)
-        s.H(0)
-        s.S(1)  
-        s.H(1)
-        s.H(2)
-    s.measure_shots()
+    # Oracle
+    s.CNOT(0, ancilla_qubit)
     s.print_state()
-    sys.exit(0)
-    
-    
-    # Constructing an EPR pair and measuring
-    s = QState(2)
-    print("\n--- EPR pair state vector ---")
-    print("Initial state:")
+
+    # Reapply Hadamard
+    for i in range(input_qubits):
+        s.H(i)
+
+    print("Final state: (must be different to |00>|->)")
     s.print_state()
-    s.H(0)
-    s.CNOT(0, 1)
-    print("State before measurement:")
-    s.print_state()
-    s.measure_shots()
-    print("Single measurement outcome:", s.measure())
-    print("State after measurement:")
-    s.print_state()
-    sys.exit(0)
-
-    # Toffoli example
-    q = QState(3)
-    q.H(0)
-    q.H(1)
-    q.X(2)  # set target to |1>
-    q.CCNOT(0, 1, 2)
-    print("\n--- Toffoli gate example ---")
-    q.measure_shots()
-    sys.exit(0)
-
-    # Website example
-    s = QState(3)
-    s.H(1)
-    s.H(2)
-    s.Rphi(2, 0.3)
-    s.CNOT(2, 1)
-    s.H(1)
-    s.H(2)
-    s.CNOT(2, 0)
-    print("\n--- Website example ---")
-    s.measure_shots()
-    sys.exit(0)
-
-    # Example circuit files
-    print("\n### Running example circuit files ###")
-    run_circuit_file("rand.circuit")
-    run_circuit_file("measure.circuit")
-    run_circuit_file("input.circuit")
-
 
 
 if __name__ == "__main__":
@@ -496,5 +428,4 @@ if __name__ == "__main__":
         filename = sys.argv[1]
         run_circuit_file(filename)
     else:
-        # --- Default tests if no argument is given ---´
-        run_tests()
+        problem2_week5()
