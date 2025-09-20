@@ -166,6 +166,26 @@ class QState:
                 new[idx] += amp
         self.state = new
 
+    def CRphi(self, control, target, phi):
+        """
+        Controlled-Rphi gate, applies a phase shift of phi to the target qubit
+        if the control qubit is in the |1> state.
+        """
+        new = np.zeros_like(self.state)
+        p_c, p_t = self._bitpos(control), self._bitpos(target)
+        phase = np.exp(1j * phi)
+
+        for idx in range(2**self.n):
+            amp = self.state[idx]
+            # If the control qubit is 1 and target is also 1, apply the phase shift
+            if (idx >> p_c) & 1 and (idx >> p_t) & 1:
+                new[idx] += amp * phase
+            # Else do nothing
+            else:
+                new[idx] += amp
+        
+        self.state = new
+
     # --- Two-qubit gates ---
     def CNOT(self, control, target):
         """Controlled-NOT with given control and target."""
@@ -287,6 +307,8 @@ class QState:
                 # Print the state
                 print(f"  |{bitstring}⟩: {real_part} {sign} {imag_part}j")
 
+        print() # Add an extra newline for better readability
+
 # ------------------ Circuit Parser ------------------
 def run_circuit_file(filename):
     with open(filename, "r") as f:
@@ -325,6 +347,8 @@ def run_circuit_file(filename):
             q.Rtheta(int(parts[1]), float(parts[2]))
         elif cmd in ("P", "RPHI"):
             q.Rphi(int(parts[1]), float(parts[2]))
+        elif cmd == "CRPHI":
+            q.CRphi(int(parts[1]), int(parts[2]), float(parts[3]))
         elif cmd == "CNOT":
             q.CNOT(int(parts[1]), int(parts[2]))
         elif cmd in ("CZ", "CPHASE"):
@@ -373,6 +397,55 @@ if __name__ == "__main__":
     else:
         # --- Default tests if no argument is given ---´
 
+        s = QState(2)
+        s.state = np.array([0, 1, 0, 0], dtype=complex)
+        s.print_state()
+        s.SWAP(0, 1)
+        s.print_state()
+
+        s = QState(1)
+        s.state = np.array([1, 0], dtype=complex)
+        s.print_state()
+        s.Rphi(0, np.pi)
+        s.print_state()
+        s.state = np.array([0, 1], dtype=complex)
+        s.print_state()
+        s.Rphi(0, np.pi)
+        s.print_state()
+
+        s = QState(2)
+        s.state = np.array([0, 0, 0, 1], dtype=complex)
+        s.print_state()
+        s.CRphi(0, 1, np.pi/2)
+        s.print_state()
+
+        s.state = np.array([0, 0, 1, 0], dtype=complex)
+        s.print_state()
+        s.CRphi(0, 1, np.pi/2)
+        s.print_state()
+
+        sys.exit(0)
+        print("### Running default tests ###")
+
+        # exercise 6
+        s = QState(3)
+        s.state = np.array([1, 0, 0, 0, 0, 0, 0, 1], dtype=complex) / np.sqrt(2)
+        # (0,0,0)
+        if True:
+            s.H(0)
+            s.H(1)
+            s.H(2)
+        # (0,1,1)
+        if False:
+            s.S(0)
+            s.H(0)
+            s.S(1)  
+            s.H(1)
+            s.H(2)
+        s.measure_shots()
+        s.print_state()
+        
+        
         # Constructing an EPR pair and measuring
         s = QState(2)
         print("\n--- EPR pair state vector ---")
