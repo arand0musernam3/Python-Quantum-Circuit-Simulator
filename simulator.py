@@ -421,6 +421,41 @@ def problem2_week5():
     print("Final state: (must be different to |00>|->)")
     s.print_state()
 
+def problem3_week5():
+    secret_string = "100"
+    n_qubits = len(secret_string) + 1
+    input_qubits = ancilla_qubit = n_qubits - 1
+    
+
+    s = QState(n_qubits)
+
+    # Prepare ancilla in the |-> state
+    s.X(ancilla_qubit)
+    s.H(ancilla_qubit)
+
+    s.print_state()
+
+    # Put all qubits into superposition
+    for i in range(input_qubits):
+        s.H(i)
+
+    s.print_state()
+
+    # Oracle for f(x) = s·x (mod 2)
+    for i in range(input_qubits):
+        if secret_string[i] == '1':
+            s.CNOT(i, ancilla_qubit)
+
+    s.print_state()
+
+    # Apply Hadamard to input qubits again
+    for i in range(input_qubits):
+        s.H(i)
+    
+    # Final state
+    print("Final state (should be |" + secret_string + ">|->):")
+    s.print_state()
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
@@ -428,4 +463,9 @@ if __name__ == "__main__":
         filename = sys.argv[1]
         run_circuit_file(filename)
     else:
+        print("\nRunning problem 2 from week 5:")
         problem2_week5()
+        print("\n\n")
+        print("\nRunning problem 3 from week 5:")
+        problem3_week5()
+        
