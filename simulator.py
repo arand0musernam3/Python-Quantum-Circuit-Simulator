@@ -388,74 +388,99 @@ def run_circuit_file(filename):
     return q
 
 # ------------------ Main / Testing ------------------
-def problem2_week5():
-    print("\n--- Problem 2 from Week 5 ---")
-    n_qubits = 3
-    input_qubits = n_qubits - 1
-    ancilla_qubit = n_qubits - 1
+import random
+import galois
 
-    s = QState(n_qubits)
+def problem4_week6(n = 5):
+    s = random.randint(1, (1<<n)-1) # non-zero secret
 
-    s.print_state()
+    print(f"Secret s = |{s:0{n}b}>")
 
-    # Preparing ancilla
-    s.X(ancilla_qubit)
-    s.H(ancilla_qubit)
+    f_map = [-1] * (1<<n) # f_map[x] = f(x), -1 means not assigned yet
+    used_outputs = set()
 
-    s.print_state()
+    for x in range(1<<n):
+        if f_map[x] != -1:
+            continue
+        y = x ^ s
 
-    # Put all qubits into superposition
-    for i in range(input_qubits):
-        s.H(i)
+        output = random.randrange(1<<n) # random output
+        while output in used_outputs:
+            output = random.randrange(1<<n) # ensure unique outputs
+        f_map[x] = output # assign f(x)
+        f_map[y] = output # assign f(y) = f(x)
+        used_outputs.add(output)
+        
+    # now f_map is ready
 
-    s.print_state()
+    # Let's run the algorithm
+    trials = 3*n # number of trials to gather enough equations
+    equations = [] # will hold the linear equations mod 2
+    q = QState(2*n) # 2n qubits, first n for input, last n for output
 
-    # Oracle
-    s.CNOT(0, ancilla_qubit)
-    s.print_state()
+    for run in range(trials):
 
-    # Reapply Hadamard
-    for i in range(input_qubits):
-        s.H(i)
+        # Reset the state to |0...0>
+        q.state = np.zeros(1 << (2*n), dtype=complex)
+        q.state[0] = 1.0
 
-    print("Final state: (must be different to |00>|->)")
-    s.print_state()
+        # Apply Hadamard to the first n qubits
+        for i in range(n):
+            q.H(i)
 
-def problem3_week5():
-    secret_string = "100"
-    n_qubits = len(secret_string) + 1
-    input_qubits = ancilla_qubit = n_qubits - 1
+        # Apply the oracle Uf
+        new_state = np.zeros_like(q.state)
+        mask = (1 << n) - 1 # mask for the last n bits
+        for idx in range(1 << (2*n)):
+            amp = q.state[idx]
+            if amp == 0:
+                continue
+            x = idx >> n          # first n bits
+            y = idx & mask        # last n bits
+            new_y = y ^ f_map[x]  # f(x)
+            new_idx = (x << n) | new_y
+            new_state[new_idx] += amp
+
+        q.state = new_state 
+
+        # Apply Hadamard to the first n qubits again
+        for i in range(n):
+            q.H(i)
+
+        # Measure the first n qubits
+        q.measure()
+        collapsed_idx = int(q.state.nonzero()[0][0])
+
+        # extract the first n bits (the input register) and store as a list of bits (MSB-first)
+        measured_j = collapsed_idx >> n
+        equations.append(measured_j)
+
+        # Verification and measurement print
+        dot = bin(measured_j & s).count("1") % 2
+        print(f"Run {run+1}: measured j = |{measured_j:0{n}b}>, verifies j · s = {dot} (should be 0)")
+
+    # Solve the linear system mod 2 using Galois field
+    A = np.array([[((j >> b) & 1) for b in reversed(range(n))] for j in equations], dtype=int) # Coefficient matrix
+    GF2 = galois.GF(2)
+    A_gf2 = GF2(A)
+
+    nullspace = A_gf2.null_space() # Get null space (solutions to A * x = 0 mod 2)
+    vec = [int(x) for x in nullspace[0].tolist()]
+
+    # check if all elements are zero
+    if all(b == 0 for b in vec):
+        print("No non-zero solution found (this should not happen with enough independent equations).")
+        return
+    else:
+        # Recover the non-zero solution (MSB-first)
+        s_recovered = sum((bit << (n - 1 - i)) for i, bit in enumerate(vec))
+
+        print(f"\nRecovered secret s = |{s_recovered:0{n}b}>")
+        if s_recovered == s:
+            print("Success! Recovered secret matches the original.")
+        else:
+            print("Failure! Recovered secret does not match the original secret.")
     
-
-    s = QState(n_qubits)
-
-    # Prepare ancilla in the |-> state
-    s.X(ancilla_qubit)
-    s.H(ancilla_qubit)
-
-    s.print_state()
-
-    # Put all qubits into superposition
-    for i in range(input_qubits):
-        s.H(i)
-
-    s.print_state()
-
-    # Oracle for f(x) = s·x (mod 2)
-    for i in range(input_qubits):
-        if secret_string[i] == '1':
-            s.CNOT(i, ancilla_qubit)
-
-    s.print_state()
-
-    # Apply Hadamard to input qubits again
-    for i in range(input_qubits):
-        s.H(i)
-    
-    # Final state
-    print("Final state (should be |" + secret_string + ">|->):")
-    s.print_state()
-
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
@@ -463,9 +488,6 @@ if __name__ == "__main__":
         filename = sys.argv[1]
         run_circuit_file(filename)
     else:
-        print("\nRunning problem 2 from week 5:")
-        problem2_week5()
-        print("\n\n")
-        print("\nRunning problem 3 from week 5:")
-        problem3_week5()
+        print("\nRunning problem 4 from week 6:\n")
+        problem4_week6(8) # You can change n here
         
