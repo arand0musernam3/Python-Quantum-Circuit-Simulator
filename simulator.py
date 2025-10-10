@@ -266,6 +266,32 @@ class QState:
                 new[idx] += amp
         self.state = new
 
+    # --- Multi-qubit gates ---
+    def QFT(self, qubits=None):
+        """Full Quantum Fourier Transform on all qubits or a subset."""
+
+        # qubits variable allows to specify a subset of qubits for QFT, 
+        # we assume input is within range
+        if qubits is None:
+            qubits = list(range(self.n))
+        
+        num_qubits = len(qubits)
+        for i in range(num_qubits):
+            # target qubit is qubits[i]
+            self.H(qubits[i]) # Hadamard on qubit i
+
+            for j in range(i+1, num_qubits):
+                # control qubit is qubits[j]
+                # Controlled phase rotation between qubits j and i
+                angle = np.pi / (2 ** (j - i))
+                self.CRphi(qubits[j], qubits[i], angle)
+        
+        # Apply SWAPs to reverse the order of qubits
+        for i in range(num_qubits // 2):
+            q1 = qubits[i]
+            q2 = qubits[num_qubits - i - 1]
+            self.SWAP(q1, q2)
+
 
     # --- Measurement ---
     def measure(self):
@@ -388,98 +414,52 @@ def run_circuit_file(filename):
     return q
 
 # ------------------ Main / Testing ------------------
-import random
-import galois
+def test_qft_matrix(n):
+    """Tests the full QFT against the theoretical matrix."""
+    N = 2**n
+    print(f"\n--- Testing: Full QFT matrix for n={n} (N={N}) ---\n")
 
-def problem4_week6(n = 5):
-    s = random.randint(1, (1<<n)-1) # non-zero secret
+    # simulate QFT on each basis state
+    simulated_matrix = np.zeros((N, N), dtype=complex)
+    for i in range(N):
+        q = QState(n)
+        q.state = np.zeros(N, dtype=complex); q.state[i] = 1.0
+        q.QFT()
+        simulated_matrix[:, i] = q.state
 
-    print(f"Secret s = |{s:0{n}b}>")
-
-    f_map = [-1] * (1<<n) # f_map[x] = f(x), -1 means not assigned yet
-    used_outputs = set()
-
-    for x in range(1<<n):
-        if f_map[x] != -1:
-            continue
-        y = x ^ s
-
-        output = random.randrange(1<<n) # random output
-        while output in used_outputs:
-            output = random.randrange(1<<n) # ensure unique outputs
-        f_map[x] = output # assign f(x)
-        f_map[y] = output # assign f(y) = f(x)
-        used_outputs.add(output)
-        
-    # now f_map is ready
-
-    # Let's run the algorithm
-    trials = 3*n # number of trials to gather enough equations
-    equations = [] # will hold the linear equations mod 2
-    q = QState(2*n) # 2n qubits, first n for input, last n for output
-
-    for run in range(trials):
-
-        # Reset the state to |0...0>
-        q.state = np.zeros(1 << (2*n), dtype=complex)
-        q.state[0] = 1.0
-
-        # Apply Hadamard to the first n qubits
-        for i in range(n):
-            q.H(i)
-
-        # Apply the oracle Uf
-        new_state = np.zeros_like(q.state)
-        mask = (1 << n) - 1 # mask for the last n bits
-        for idx in range(1 << (2*n)):
-            amp = q.state[idx]
-            if amp == 0:
-                continue
-            x = idx >> n          # first n bits
-            y = idx & mask        # last n bits
-            new_y = y ^ f_map[x]  # f(x)
-            new_idx = (x << n) | new_y
-            new_state[new_idx] += amp
-
-        q.state = new_state 
-
-        # Apply Hadamard to the first n qubits again
-        for i in range(n):
-            q.H(i)
-
-        # Measure the first n qubits
-        q.measure()
-        collapsed_idx = int(q.state.nonzero()[0][0])
-
-        # extract the first n bits (the input register) and store as a list of bits (MSB-first)
-        measured_j = collapsed_idx >> n
-        equations.append(measured_j)
-
-        # Verification and measurement print
-        dot = bin(measured_j & s).count("1") % 2
-        print(f"Run {run+1}: measured j = |{measured_j:0{n}b}>, verifies j · s = {dot} (should be 0)")
-
-    # Solve the linear system mod 2 using Galois field
-    A = np.array([[((j >> b) & 1) for b in reversed(range(n))] for j in equations], dtype=int) # Coefficient matrix
-    GF2 = galois.GF(2)
-    A_gf2 = GF2(A)
-
-    nullspace = A_gf2.null_space() # Get null space (solutions to A * x = 0 mod 2)
-    vec = [int(x) for x in nullspace[0].tolist()]
-
-    # check if all elements are zero
-    if all(b == 0 for b in vec):
-        print("No non-zero solution found (this should not happen with enough independent equations).")
-        return
+    # by definition of QFT
+    omega = np.exp(2 * np.pi * 1j / N)
+    theoretical_matrix = np.array([[omega**(j*k) for k in range(N)] for j in range(N)]) / np.sqrt(N)
+    
+    # comparison
+    if np.allclose(simulated_matrix, theoretical_matrix):
+        print("SUCCESS.\n")
     else:
-        # Recover the non-zero solution (MSB-first)
-        s_recovered = sum((bit << (n - 1 - i)) for i, bit in enumerate(vec))
+        print("FAILURE.\n")
 
-        print(f"\nRecovered secret s = |{s_recovered:0{n}b}>")
-        if s_recovered == s:
-            print("Success! Recovered secret matches the original.")
-        else:
-            print("Failure! Recovered secret does not match the original secret.")
+def test_qft_periodic_state(n=6, period=8):
+    """Tests the full QFT on a periodic state."""
+    N = 2**n
+    print(f"\n--- Testing: Full QFT on a periodic state (n={n}, period={period}) ---\n")
+    q = QState(n)
+    initial_state = np.zeros(N, dtype=complex)
+    # Create a periodic superposition state (what we would obtain after modular exponentiation)
+    for i in range(N // period): 
+        initial_state[i * period] = 1.0
+    
+    q.state = initial_state / np.linalg.norm(initial_state)
+    
+    print(f"Applying QFT... expecting peaks at multiples of N/period = {N}/{period} = {N/period}.")
+    q.QFT()
+    # try to visualize the result, if N/period is not exact peaks should still be visible
+    q.measure_shots()
+
+
+def problem2_week8():
+    test_qft_matrix(n=3)
+    test_qft_periodic_state(n=5, period=4)
+    test_qft_periodic_state(n=5, period=6)
+
     
 
 if __name__ == "__main__":
@@ -488,6 +468,6 @@ if __name__ == "__main__":
         filename = sys.argv[1]
         run_circuit_file(filename)
     else:
-        print("\nRunning problem 4 from week 6:\n")
-        problem4_week6(8) # You can change n here
+        print("\nRunning problem 2 from week 8:\n")
+        problem2_week8()
         
